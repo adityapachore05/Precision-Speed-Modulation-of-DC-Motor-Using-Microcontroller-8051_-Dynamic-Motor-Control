@@ -1,0 +1,250 @@
+C51 COMPILER V9.60.7.0   PWM                                                               05/03/2023 11:23:06 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE PWM
+OBJECT MODULE PLACED IN .\Objects\pwm.obj
+COMPILER INVOKED BY: D:\Keil_5\C51\BIN\C51.EXE pwm.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\pwm.ls
+                    -t) TABS(2) OBJECT(.\Objects\pwm.obj)
+
+line level    source
+
+   1          #include <REG51.H>
+   2          #include <STDIO.H>
+   3          #include <intrins.h>
+   4          
+   5          /* Define value to be loaded in timer for PWM period of 20 milli second */
+   6          #define PWM_Period 0xB7FE
+   7          
+   8          sbit PWM_Out_Pin      = P2^0; /* PWM Out Pin for speed control */
+   9          sbit Speed_Inc        = P1^0; /* Speed Increment switch pin */
+  10          sbit Speed_Dec        = P1^1; /* Speed Decrement switch pin */
+  11          sbit Change_Dir       = P1^2; /* Rotation direction change switch pin */
+  12          sbit CKT_ON           = P1^3;
+  13          sbit M1_Pin1          = P1^6; /* Motor Pin 1 */
+  14          sbit M1_Pin2          = P1^7; /* Motor Pin 2 */
+  15          
+  16          sfr LCD_DATA = 0xB0 ;
+  17          sbit RS = P2^5;
+  18          sbit RW = P2^6;
+  19          sbit E = P2^7;
+  20          
+  21          
+  22          void delay(unsigned int count)
+  23          {
+  24   1          int i,j;
+  25   1          for(i=0; i<count; i++)
+  26   1            for(j=0; j<112; j++);
+  27   1      }
+  28          
+  29          void lcd_cmd(unsigned char command)
+  30          {
+  31   1        LCD_DATA = command;
+  32   1        RS = 0;
+  33   1        RW = 0;
+  34   1        E = 1;
+  35   1        delay(10);
+  36   1        E = 0;
+  37   1      }
+  38          
+  39          void lcd_data(unsigned char disp_data)
+  40          {
+  41   1        LCD_DATA = disp_data;
+  42   1        RS = 1;
+  43   1        RW = 0 ;
+  44   1        E = 1;
+  45   1        delay(10);
+  46   1        E = 0;
+  47   1        
+  48   1      }
+  49          
+  50          void lcd_init()
+  51          {
+  52   1        
+  53   1        lcd_cmd(0x38);
+  54   1        delay(10);
+C51 COMPILER V9.60.7.0   PWM                                                               05/03/2023 11:23:06 PAGE 2   
+
+  55   1        lcd_cmd(0x0c);
+  56   1        delay(10);
+  57   1        lcd_cmd(0x80);
+  58   1        delay(10);
+  59   1      }
+  60          
+  61          unsigned int ON_Period, OFF_Period, DutyCycle;
+  62          float Speed;
+  63          
+  64          int rotation(int dir)
+  65          {
+  66   1        if(dir==1)
+  67   1          return 0;
+  68   1        else
+  69   1          return 1;
+  70   1      }
+  71            
+  72          
+  73          /* Function to provide delay of 1ms at 11.0592 MHz */
+  74          
+  75          
+  76          void Timer_init()
+  77          {
+  78   1        TMOD = 0x01;            /* Timer0 mode1 */
+  79   1        TH0 = (PWM_Period >> 8);/* 20ms timer value */
+  80   1        TL0 = PWM_Period;      
+  81   1        TR0 = 1;                /* Start timer0 */
+  82   1      }
+  83          
+  84          /* Timer0 interrupt service routine (ISR) */
+  85          void Timer0_ISR() interrupt 1 
+  86          {
+  87   1        PWM_Out_Pin = !PWM_Out_Pin;
+  88   1        if(PWM_Out_Pin)
+  89   1        {
+  90   2          TH0 = (ON_Period >> 8);
+  91   2          TL0 = ON_Period;
+  92   2        } 
+  93   1        else
+  94   1        {
+  95   2          TH0 = (OFF_Period >> 8);
+  96   2          TL0 = OFF_Period;
+  97   2        } 
+  98   1            
+  99   1      }
+ 100          void display(int tik)
+ 101          {
+ 102   1        unsigned char a[20];
+ 103   1        unsigned int i = 0; 
+ 104   1        int key = rotation(tik);
+ 105   1        if(key == 0)
+ 106   1          {
+ 107   2            lcd_cmd(0xc0);
+ 108   2            lcd_data('a');
+ 109   2          }
+ 110   1          if(key==1)
+ 111   1          {
+ 112   2            lcd_cmd(0xc0);
+ 113   2            lcd_data('c');
+ 114   2          }
+ 115   1        sprintf(a,"DutyCycle=%0.1f",Speed);
+ 116   1              lcd_init();
+C51 COMPILER V9.60.7.0   PWM                                                               05/03/2023 11:23:06 PAGE 3   
+
+ 117   1                while( a[i] != '\0')
+ 118   1          { 
+ 119   2            lcd_data(a[i]);
+ 120   2            i++;
+ 121   2            delay(3);
+ 122   2          }
+ 123   1          
+ 124   1          
+ 125   1      }
+ 126          void Set_DutyCycle_To(float duty_cycle,int pin)
+ 127          {
+ 128   1        float period = 65535 - PWM_Period;
+ 129   1        ON_Period = ((period/100.0) * duty_cycle);
+ 130   1        OFF_Period = (period - ON_Period);  
+ 131   1        ON_Period = 65535 - ON_Period;  
+ 132   1        OFF_Period = 65535 - OFF_Period;
+ 133   1        display(pin);
+ 134   1      }
+ 135          
+ 136          void Motor_Init()
+ 137          {
+ 138   1        Speed = 0;
+ 139   1        M1_Pin1 = 1;
+ 140   1        M1_Pin2 = 0;
+ 141   1        Set_DutyCycle_To(Speed,M1_Pin1);
+ 142   1      }
+ 143          
+ 144          void main()
+ 145          {
+ 146   1        int count=1;
+ 147   1      unsigned char a[20];
+ 148   1      unsigned int i = 0; 
+ 149   1      Speed_Inc =0;     
+ 150   1      Speed_Dec =0;     
+ 151   1      Change_Dir =0;
+ 152   1      CKT_ON = 0;
+ 153   1        
+ 154   1        EA  = 1;          /* Enable global _interrupt */
+ 155   1        ET0 = 1;          /* Enable timer0 _interrupt */
+ 156   1        Timer_init();
+ 157   1        Motor_Init();
+ 158   1        
+ 159   1        while(CKT_ON==1)
+ 160   1          {
+ 161   2            while(count==1){
+ 162   3              sprintf(a,"PWM Generation");
+ 163   3              lcd_init();
+ 164   3              lcd_cmd(0x01);
+ 165   3                while( a[i] != '\0')
+ 166   3          { 
+ 167   4            
+ 168   4            lcd_data(a[i]);
+ 169   4            i++;
+ 170   4            delay(30);
+ 171   4          }
+ 172   3          count--;
+ 173   3        }
+ 174   2              
+ 175   2            /* Increment Duty cycle i.e. speed by 10% for Speed_Inc Switch */
+ 176   2            if(Speed_Inc == 1)
+ 177   2              {
+ 178   3                if(Speed < 100)
+C51 COMPILER V9.60.7.0   PWM                                                               05/03/2023 11:23:06 PAGE 4   
+
+ 179   3                Speed += 10;
+ 180   3                Set_DutyCycle_To(Speed,M1_Pin1);
+ 181   3                while(Speed_Inc == 1);
+ 182   3                delay(200);
+ 183   3              }
+ 184   2            /* Decrement Duty cycle i.e. speed by 10% for Speed_Dec Switch */
+ 185   2            if(Speed_Dec == 1)
+ 186   2              {
+ 187   3                if(Speed > 0)
+ 188   3                Speed -= 10;
+ 189   3                Set_DutyCycle_To(Speed,M1_Pin1);
+ 190   3                while(Speed_Dec == 1);
+ 191   3                delay(200);
+ 192   3              }
+ 193   2            /* Change rotation direction for Change_Dir Switch */
+ 194   2            if(Change_Dir == 1)
+ 195   2              {
+ 196   3                M1_Pin1 = !M1_Pin1;
+ 197   3                M1_Pin2 = !M1_Pin2;
+ 198   3                while(Change_Dir == 1);
+ 199   3                display(M1_Pin1);
+ 200   3                delay(200);
+ 201   3              } 
+ 202   2          }
+ 203   1            while(CKT_ON == 0){
+ 204   2        
+ 205   2        sprintf(a,"!!!");
+ 206   2              lcd_init();
+ 207   2              lcd_cmd(0x01);
+ 208   2              
+ 209   2                while( a[i] != '\0')
+ 210   2          { 
+ 211   3            
+ 212   3            lcd_data(a[i]);
+ 213   3            i++;
+ 214   3            delay(30);
+ 215   3          }
+ 216   2          count++;
+ 217   2          M1_Pin1 =0;
+ 218   2          
+ 219   2        }
+ 220   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    755    ----
+   CONSTANT SIZE    =     35    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     10      56
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
